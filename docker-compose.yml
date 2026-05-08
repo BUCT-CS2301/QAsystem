@@ -1,0 +1,41 @@
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: vue-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - app-network
+
+  # Vue + Nginx 前端服务
+  vue-nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    container_name: vue-nginx
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - mysql
+    networks:
+      - app-network
+
+# 数据卷（数据库数据持久化）
+volumes:
+  mysql-data:
+
+# 网络（容器之间互通）
+networks:
+  app-network:
+    driver: bridge
