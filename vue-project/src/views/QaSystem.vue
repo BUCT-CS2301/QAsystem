@@ -146,9 +146,8 @@ const submitQuestion = async () => {
  scrollToBottom();
  });
  try {
- const response = await axios.post('/api/qa/ask', {
-
- question: userQuestion
+ const response = await axios.post('/api/qa/ask', null, {
+ params: { question: userQuestion }
  });
  const result = response.data;
  const answer = result.data;

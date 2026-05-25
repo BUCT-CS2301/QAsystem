@@ -20,12 +20,14 @@ ATTRIBUTE_LABELS = {
 RAG_SYSTEM_PROMPT = (
     "你是一位博物馆知识问答系统的资深中文讲解员。\n"
     "你只能依据用户给出的【已知文物知识库文档】里的信息来回答，不能编造数据库中没有的信息。\n"
-    "回答要求：\n"
-    "1. 详细且完整：回答不少于200字，尽量涵盖文档中提到的所有相关信息（包括名称、时期/朝代、材质、品类、馆藏博物馆、尺寸、简介等）；\n"
-    "2. 有文化深度：用流畅、自然的中文进行组织，像在给观众做文物讲解一样，带有文化感和知识感；\n"
-    "3. 分点阐述：当涉及多件文物时，分别介绍每件文物的信息，做好分条和对比；\n"
-    "4. 如果文档中有多件不同的文物都与问题相关，请全部介绍，不要只提及第一件；\n"
-    "5. 如果文档确实不足以回答用户的问题，才明确说明当前数据库暂无记录。"
+    "你的回答必须包含两个部分，并使用 [CONTENT] 和 [LLM_CONTENT] 标签分隔：\n"
+    "1. [CONTENT] 部分：直接、简洁地回答用户问题（50字以内）；\n"
+    "2. [LLM_CONTENT] 部分：相关文物的详细讲解（不少于200字），涵盖朝代、材质、品类、博物馆、尺寸及历史积淀等信息。\n"
+    "格式示例：\n"
+    "[CONTENT]\n"
+    "《清明上河图》现藏于北京故宫博物院。\n"
+    "[LLM_CONTENT]\n"
+    "《清明上河图》是北宋画家张择端的代表作..."
 )
 
 
@@ -90,7 +92,8 @@ class AnswerGenerator:
         if top_score < settings.rag.min_score:
             return QAResult(
                 question=question,
-                answer="当前数据库中暂无记录。请换一种问法，或补充文物名称、朝代、材质、品类、馆藏等线索。",
+                content="当前数据库中暂无记录。请换一种问法，或补充文物名称、朝代、材质、品类、馆藏等线索。",
+                llmContent="",
                 confidence=max(0.1, min(top_score, 0.45)),
                 sources=self._deduplicated_sources(artifacts[:3]),
                 related_artifacts=self._deduplicated_artifacts(artifacts[:5]),
@@ -107,7 +110,8 @@ class AnswerGenerator:
             answer = self._build_extract_answer(question, artifacts)
             return QAResult(
                 question=question,
-                answer=answer,
+                content=answer,
+                llmContent="",
                 confidence=self._score_to_confidence(top_score),
                 sources=self._deduplicated_sources(artifacts[:5]),
                 related_artifacts=self._deduplicated_artifacts(artifacts[:8]),
@@ -117,9 +121,12 @@ class AnswerGenerator:
         if not answer:
             answer = self._build_extract_answer(question, artifacts)
 
+        content, llm_content = self._split_answer(answer)
+
         return QAResult(
             question=question,
-            answer=answer,
+            content=content,
+            llmContent=llm_content,
             confidence=self._score_to_confidence(top_score),
             sources=self._deduplicated_sources(artifacts[:5]),
             related_artifacts=self._deduplicated_artifacts(artifacts[:8]),
@@ -131,7 +138,8 @@ class AnswerGenerator:
     def build_no_result(self, question: str) -> QAResult:
         return QAResult(
             question=question,
-            answer="当前数据库中没有检索到足够明确的文物或图谱关系。可以尝试补充文物名称、朝代、材质、品类或博物馆名称。",
+            content="当前数据库中没有检索到足够明确的文物或图谱关系。可以尝试补充文物名称、朝代、材质、品类或博物馆名称。",
+            llmContent="",
             confidence=0.2,
         )
 
@@ -158,7 +166,8 @@ class AnswerGenerator:
 
         return QAResult(
             question=question,
-            answer=answer,
+            content=answer,
+            llmContent="",
             confidence=confidence,
             sources=[self._source_from_artifact(artifact, label)],
             related_artifacts=related or [],
@@ -182,7 +191,8 @@ class AnswerGenerator:
 
         return QAResult(
             question=question,
-            answer="\n".join(lines),
+            content="\n".join(lines),
+            llmContent="",
             confidence=0.76,
             sources=[self._source_from_artifact(item, "图谱匹配") for item in artifacts[:5]],
             related_artifacts=artifacts[:8],
@@ -192,7 +202,8 @@ class AnswerGenerator:
         if not related:
             return QAResult(
                 question=question,
-                answer=f'已识别到文物"{artifact.title}"，但当前图谱中没有找到明显共享关系的相关文物。',
+                content=f'已识别到文物"{artifact.title}"，但当前图谱中没有找到明显共享关系的相关文物。',
+                llmContent="",
                 confidence=0.55,
                 sources=[self._source_from_artifact(artifact, "目标文物")],
             )
@@ -211,7 +222,8 @@ class AnswerGenerator:
 
         return QAResult(
             question=question,
-            answer="\n".join(lines),
+            content="\n".join(lines),
+            llmContent="",
             confidence=0.78,
             sources=[self._source_from_artifact(artifact, "目标文物")],
             related_artifacts=related,
@@ -221,7 +233,8 @@ class AnswerGenerator:
         answer = self._build_intro(artifact)
         return QAResult(
             question=question,
-            answer=answer,
+            content=answer,
+            llmContent="",
             confidence=0.8,
             sources=[self._source_from_artifact(artifact, "文物详情")],
             related_artifacts=related[:5],
@@ -259,11 +272,10 @@ class AnswerGenerator:
         return mapping.get(attribute, "")
 
     def _source_from_artifact(self, artifact: Artifact, detail: str) -> Source:
+        # 优先使用博物馆官网作为来源，如果没有则使用外部链接或占位符
         return Source(
-            type="artifact",
-            title=artifact.title,
-            object_id=artifact.object_id,
-            detail=detail,
+            name=artifact.museum or "博物馆知识图谱",
+            url=artifact.image_url or "https://www.dpm.org.cn/",  # 默认指向故宫
         )
 
     def _deduplicated_sources(self, artifacts: list[Artifact]) -> list[Source]:
@@ -327,6 +339,18 @@ class AnswerGenerator:
         lines.append("提示：配置大模型后，系统会将这些检索结果进一步整理成自然语言回答。")
         return "\n".join(lines)
 
+    @staticmethod
+    def _split_answer_static(text: str) -> tuple[str, str]:
+        if "[LLM_CONTENT]" in text:
+            parts = text.split("[LLM_CONTENT]")
+            content = parts[0].replace("[CONTENT]", "").strip()
+            llm_content = parts[1].strip()
+            return content, llm_content
+        return text, ""
+
+    def _split_answer(self, text: str) -> tuple[str, str]:
+        return self._split_answer_static(text)
+
     def _score_to_confidence(self, score: float) -> float:
         if score >= settings.rag.high_score:
             return 0.92
@@ -334,7 +358,6 @@ class AnswerGenerator:
             return 0.5
         span = settings.rag.high_score - settings.rag.min_score
         return 0.5 + ((score - settings.rag.min_score) / span) * 0.42
-
 
 class QAResultMeta:
     """Lightweight metadata container for streaming answers."""
@@ -364,9 +387,11 @@ class QAResultMeta:
         )
 
     def to_result(self, answer: str) -> QAResult:
+        content, llm_content = AnswerGenerator._split_answer_static(answer)
         return QAResult(
             question=self.question,
-            answer=answer,
+            content=content,
+            llmContent=llm_content,
             confidence=self.confidence,
             sources=self.sources,
             related_artifacts=self.related_artifacts,

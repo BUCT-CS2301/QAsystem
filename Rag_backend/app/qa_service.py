@@ -40,33 +40,36 @@ class QAService:
         except (ServiceUnavailable, Neo4jError) as exc:
             result = QAResult(
                 question=question,
-                answer=(
+                content=(
                     "当前无法连接 Neo4j 图数据库，或向量索引尚未创建。"
                     "请确认 dev-neo4j 容器已启动，并先运行 scripts/embed_artifacts.py。"
                 ),
+                llmContent="",
                 confidence=0.0,
                 debug={"error": str(exc)},
             )
         except MySQLError as exc:
             result = QAResult(
                 question=question,
-                answer="当前无法连接 MySQL 数据库，请确认 dev-mysql 容器已经启动，并且 127.0.0.1:3307 可以访问。",
+                content="当前无法连接 MySQL 数据库，请确认 dev-mysql 容器已经启动，并且 127.0.0.1:3307 可以访问。",
+                llmContent="",
                 confidence=0.0,
                 debug={"error": str(exc)},
             )
         except (RequestException, RuntimeError) as exc:
             result = QAResult(
                 question=question,
-                answer=(
+                content=(
                     "当前无法调用 Embedding/Chat API。请在统一配置中填写 DEEPSEEK_API_KEY 等参数后重试。"
                 ),
+                llmContent="",
                 confidence=0.0,
                 debug={"error": str(exc)},
             )
 
         if result.confidence > 0:
             self.cache.set_json(cache_key, asdict(result))
-            self.cache.remember_question(question, result.answer)
+            self.cache.remember_question(question, result.content)
         return result
 
     def ask_stream(self, question: str) -> tuple[Generator[str, None, None], QAResultMeta]:
@@ -76,7 +79,7 @@ class QAService:
             result = self._result_from_dict(cached)
             result.debug["cache_hit"] = True
             meta = QAResultMeta.from_result(result)
-            return iter([result.answer]), meta
+            return iter([result.content]), meta
 
         try:
             query_vector = self.llm.embed(question)
@@ -139,7 +142,8 @@ class QAService:
         related = [Artifact(**item) for item in data.get("related_artifacts", [])]
         return QAResult(
             question=data.get("question", ""),
-            answer=data.get("answer", ""),
+            content=data.get("content", ""),
+            llmContent=data.get("llmContent", ""),
             confidence=float(data.get("confidence", 0)),
             sources=sources,
             related_artifacts=related,
