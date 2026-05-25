@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 环境配置
+.env
+.env.local
+.venv
+venv/
+ENV/
+env/
+
+# IDE 和工具配置
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 临时文件
+*.log
