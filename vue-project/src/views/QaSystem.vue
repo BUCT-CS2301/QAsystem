@@ -26,8 +26,8 @@
                 <p>您好！我是文物知识问答助手，请问有什么可以帮助您的？</p>
                 <p class="suggestions">您可以尝试询问：</p>
                 <div class="suggestion-tags">
-                  <button v-for="tag in suggestionTags" :key="tag" @click="handleQuickQuestion(tag)" class="suggestion-tag">
-                    {{ tag }}
+                  <button v-for="tag in suggestionTags" :key="tag.name" @click="handleTypeClick(tag)" class="suggestion-tag">
+                    {{ tag.name }}
                   </button>
                 </div>
               </div>
@@ -36,6 +36,9 @@
             <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.type]">
               <div class="message-content">
                 <p>{{ msg.content }}</p>
+                <div v-if="msg.hasLink" class="try-link">
+                  <a href="#" @click.prevent="handleTryLink(msg.linkExample)" class="try-link-text">{{ msg.linkText }}</a>
+                </div>
                 <div v-if="msg.sources && msg.sources.length > 0" class="sources">
                   <div class="source-label">📚 数据来源：</div>
                   <div v-for="(source, sIndex) in msg.sources" :key="sIndex" class="source-item">
@@ -88,7 +91,7 @@
           <div class="sidebar-section">
             <h3>问答类型</h3>
             <div class="type-list">
-              <div v-for="(type, index) in questionTypes" :key="index" class="type-item">
+              <div v-for="(type, index) in questionTypes" :key="index" @click="handleTypeClick(type)" class="type-item">
                 <span class="type-icon">{{ type.icon }}</span>
                 <span class="type-text">{{ type.name }}</span>
               </div>
@@ -99,162 +102,39 @@
     </main>
 
     <footer class="footer">
-      <p>&copy; 2024 文物知识问答系统 - 基于知识图谱与大语言模型构建</p>
+      <p>&copy; 2026 文物知识问答系统 - 基于知识图谱与大语言模型构建</p>
     </footer>
   </div>
 </template>
 
 <script setup>import { ref, nextTick } from 'vue';
+import axios from 'axios';
 const question = ref('');
 const messages = ref([]);
 const isLoading = ref(false);
 const messagesContainer = ref(null);
-const suggestionTags = [
- '文物收藏地',
- '文物年代',
- '文物材质',
- '文物类型',
- '文物介绍',
- '书画作者',
- '作者生平',
- '相关文物'
-];
-const faqs = [
- { question: '《清明上河图》现藏于哪家博物馆？', type: '收藏地' },
- { question: '青花瓷属于哪个历史时期的代表性文物？', type: '年代' },
- { question: '司母戊鼎是什么材质制成的？', type: '材质' },
- { question: '《兰亭序》的作者是谁？', type: '作者' },
- { question: '唐代有哪些代表性文物？', type: '朝代' },
- { question: '与《富春山居图》风格相似的文物有哪些？', type: '推荐' }
-];
 const questionTypes = [
- { icon: '🏛️', name: '文物收藏地' },
- { icon: '📅', name: '文物年代' },
- { icon: '🔨', name: '文物材质' },
- { icon: '🏺', name: '文物类型' },
- { icon: '📝', name: '文物介绍' },
- { icon: '✍️', name: '书画作者' },
- { icon: '👤', name: '作者生平' },
- { icon: '🎨', name: '同一作者作品' },
- { icon: '👑', name: '同一朝代文物' },
- { icon: '📐', name: '尺寸规格' },
- { icon: '🔗', name: '相关文物推荐' }
+ { icon: '🏛️', name: '文物收藏地', example: '《清明上河图》现藏于哪家博物馆？' },
+ { icon: '📅', name: '文物年代', example: '司母戊鼎是什么时期的文物？' },
+ { icon: '🔨', name: '文物材质', example: '青花瓷是什么材质制成的？' },
+ { icon: '🏺', name: '文物类型', example: '兵马俑属于什么类型的文物？' },
+ { icon: '📝', name: '文物介绍', example: '请介绍一下《兰亭序》' },
+ { icon: '✍️', name: '书画作者', example: '《富春山居图》的作者是谁？' },
+ { icon: '👤', name: '作者生平', example: '王羲之的生平经历是怎样的？' },
+ { icon: '📜', name: '同一作者作品', example: '与《清明上河图》同一作者的作品有哪些？' },
+ { icon: '🏯', name: '同一朝代文物', example: '唐代有哪些代表性文物？' },
+ { icon: '📏', name: '尺寸规格', example: '曾侯乙编钟的尺寸规格是多少？' },
+ { icon: '🔗', name: '相关文物推荐', example: '与《千里江山图》相关的文物有哪些？' }
 ];
-const mockAnswers = {
- '文物收藏地': {
- content: '根据知识图谱数据，该文物现藏于北京故宫博物院。',
- sources: [
- { name: '故宫博物院官网', url: 'https://www.dpm.org.cn/' }
- ]
- },
- '文物年代': {
- content: '该文物属于唐代（公元618年-907年）。',
- sources: [
- { name: '中国国家博物馆', url: 'https://www.chnmuseum.cn/' }
- ],
- llmContent: '唐代是中国历史上文化艺术高度繁荣的时期，这一时期的文物具有鲜明的时代特征。'
- },
- '文物材质': {
- content: '该文物由青铜铸造而成。',
- sources: [
- { name: '上海博物馆', url: 'https://www.shanghaimuseum.net/' }
- ]
- },
- '文物类型': {
- content: '该文物属于青铜器类别，具体为礼器。',
- sources: [
- { name: '青铜器数据库', url: 'https://www.bronze-age.cn/' }
- ]
- },
- '文物介绍': {
- content: '这件文物是一件精美的唐代青花瓷瓶，高35厘米，口径12厘米，造型端庄典雅，纹饰精美繁复。',
- sources: [
- { name: '大英博物馆', url: 'https://www.britishmuseum.org/' },
- { name: '大都会艺术博物馆', url: 'https://www.metmuseum.org/' }
- ],
- llmContent: '青花瓷是中国瓷器中的经典品类，以钴料在白瓷上绘制图案，经高温烧成后呈现出独特的蓝色花纹。'
- },
- '书画作者': {
- content: '《兰亭序》的作者是东晋书法家王羲之。',
- sources: [
- { name: '故宫博物院书画馆', url: 'https://www.dpm.org.cn/collection/painting' }
- ],
- llmContent: '王羲之被誉为"书圣"，其书法风格飘逸灵动，对后世书法发展产生了深远影响。'
- },
- '作者生平': {
- content: '王羲之（303年-361年），字逸少，琅琊临沂人，东晋时期著名书法家。',
- sources: [
- { name: '中国书法网', url: 'https://www.chinacalligraphy.org/' }
- ],
- llmContent: '王羲之在书法艺术上造诣极高，其代表作《兰亭序》被称为"天下第一行书"。'
- },
- '同一作者作品': {
- content: '王羲之的其他著名作品包括《快雪时晴帖》、《十七帖》、《姨母帖》等。',
- sources: [
- { name: '台北故宫博物院', url: 'https://www.npm.edu.tw/' }
- ]
- },
- '同一朝代文物': {
- content: '唐代代表性文物包括唐三彩、青铜镜、金银器、壁画等。',
- sources: [
- { name: '陕西历史博物馆', url: 'https://www.sxhm.com/' },
- { name: '敦煌研究院', url: 'https://www.dha.ac.cn/' }
- ]
- },
- '尺寸规格': {
- content: '该文物高45厘米，宽28厘米，重约15公斤。',
- sources: [
- { name: '文物数据平台', url: 'https://www.culturalchina.com/' }
- ]
- },
- '相关文物': {
- content: '与该文物风格相似的文物包括《千里江山图》、《富春山居图》、《溪山行旅图》等。',
- sources: [
- { name: '故宫博物院', url: 'https://www.dpm.org.cn/' },
- { name: '辽宁省博物馆', url: 'https://www.lnmuseum.com/' }
- ],
- llmContent: '这些作品均属于中国传统山水画的经典之作，展现了中国古代绘画艺术的高超水平。'
- }
-};
-const getAnswer = (q) => {
- const lowerQ = q.toLowerCase();
- if (lowerQ.includes('收藏') || lowerQ.includes('博物馆')) {
- return mockAnswers['文物收藏地'];
- }
- else if (lowerQ.includes('年代') || lowerQ.includes('时期') || lowerQ.includes('朝代')) {
- if (lowerQ.includes('有哪些') || lowerQ.includes('哪些')) {
- return mockAnswers['同一朝代文物'];
- }
- return mockAnswers['文物年代'];
- }
- else if (lowerQ.includes('材质') || lowerQ.includes('材料') || lowerQ.includes('什么做的')) {
- return mockAnswers['文物材质'];
- }
- else if (lowerQ.includes('类型') || lowerQ.includes('类别') || lowerQ.includes('属于哪种')) {
- return mockAnswers['文物类型'];
- }
- else if (lowerQ.includes('介绍') || lowerQ.includes('描述')) {
- return mockAnswers['文物介绍'];
- }
- else if (lowerQ.includes('作者') && !lowerQ.includes('生平')) {
- if (lowerQ.includes('作品') || lowerQ.includes('还有哪些')) {
- return mockAnswers['同一作者作品'];
- }
- return mockAnswers['书画作者'];
- }
- else if (lowerQ.includes('生平') || lowerQ.includes('经历')) {
- return mockAnswers['作者生平'];
- }
- else if (lowerQ.includes('尺寸') || lowerQ.includes('规格') || lowerQ.includes('重量')) {
- return mockAnswers['尺寸规格'];
- }
- else if (lowerQ.includes('相似') || lowerQ.includes('推荐') || lowerQ.includes('相关')) {
- return mockAnswers['相关文物'];
- }
- else {
- return null;
- }
-};
+const suggestionTags = questionTypes.slice(0, 8).map(item => ({ name: item.name, example: item.example }));
+const faqs = [
+ { question: '《清明上河图》现藏于哪家博物馆？' },
+ { question: '青花瓷属于哪个历史时期的代表性文物？' },
+ { question: '司母戊鼎是什么材质制成的？' },
+ { question: '《兰亭序》的作者是谁？' },
+ { question: '唐代有哪些代表性文物？' },
+ { question: '与《富春山居图》风格相似的文物有哪些？' }
+];
 const submitQuestion = async () => {
  if (!question.value.trim() || isLoading.value)
  return;
@@ -265,17 +145,30 @@ const submitQuestion = async () => {
  await nextTick(() => {
  scrollToBottom();
  });
- await new Promise(resolve => setTimeout(resolve, 1500));
- const answer = getAnswer(userQuestion);
- if (answer) {
+ try {
+ const response = await axios.post('/api/qa/ask', {
+
+ question: userQuestion
+ });
+ const result = response.data;
+ const answer = result.data;
+ if (answer && answer.content) {
  messages.value.push({
  type: 'bot',
  content: answer.content,
- sources: answer.sources,
+ sources: answer.sources || [],
  llmContent: answer.llmContent
  });
  }
  else {
+ messages.value.push({
+ type: 'bot',
+ content: '',
+ noData: true
+ });
+ }
+ }
+ catch (error) {
  messages.value.push({
  type: 'bot',
  content: '',
@@ -290,6 +183,21 @@ const submitQuestion = async () => {
 const handleQuickQuestion = (q) => {
  question.value = q;
  submitQuestion();
+};
+const handleTypeClick = (type) => {
+ messages.value.push({
+ type: 'bot',
+ content: `您可以这样问："${type.example}"`,
+ hasLink: true,
+ linkText: '去试试',
+ linkExample: type.example
+ });
+ nextTick(() => {
+ scrollToBottom();
+ });
+};
+const handleTryLink = (example) => {
+ question.value = example;
 };
 const scrollToBottom = () => {
  if (messagesContainer.value) {
@@ -531,6 +439,25 @@ const scrollToBottom = () => {
   color: #721c24;
 }
 
+.try-link {
+  margin-top: 0.75rem;
+}
+
+.try-link-text {
+  font-size: 0.9rem;
+  color: #667eea;
+  text-decoration: none;
+  padding: 0.375rem 0.75rem;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 0.25rem;
+  transition: all 0.3s ease;
+}
+
+.try-link-text:hover {
+  background: rgba(102, 126, 234, 0.2);
+  text-decoration: underline;
+}
+
 .loading-message {
   align-self: center;
   display: flex;
@@ -609,17 +536,22 @@ const scrollToBottom = () => {
 }
 
 .sidebar {
-  width: 320px;
+  width: 420px;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  overflow-y: auto;
+  /* 禁止滑动 */
+  scrollbar-width: none;
+
 }
 
 .sidebar-section {
   background: white;
   border-radius: 1rem;
-  padding: 1.5rem;
+  padding: 0.5rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transform: scale(0.95);
 }
 
 .sidebar-section h3 {
@@ -665,7 +597,7 @@ const scrollToBottom = () => {
 
 .type-list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.75rem;
 }
 
@@ -676,6 +608,13 @@ const scrollToBottom = () => {
   padding: 0.75rem;
   background: #f8f9fa;
   border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.type-item:hover {
+  background: #e9ecef;
+  transform: translateY(-2px);
 }
 
 .type-icon {
