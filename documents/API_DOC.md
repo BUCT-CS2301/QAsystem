@@ -18,7 +18,7 @@
 ### 请求地址
 
 ```http
-POST /api/chat/stream
+POST /api/chat
 ```
 
 ### 请求头
