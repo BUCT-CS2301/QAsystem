@@ -35,19 +35,24 @@
 
             <div v-for="(msg, index) in messages" :key="index" :class="['message', msg.type]">
               <div class="message-content">
-                <p>{{ msg.content }}</p>
+                <p v-if="msg.content">{{ msg.content }}</p>
                 <div v-if="msg.hasLink" class="try-link">
                   <a href="#" @click.prevent="handleTryLink(msg.linkExample)" class="try-link-text">{{ msg.linkText }}</a>
+                </div>
+                <div v-if="msg.llmContent" class="llm-content">
+                  <span v-html="formatMarkdown(msg.llmContent)"></span>
+                </div>
+                <div v-if="msg.images && msg.images.length > 0" class="images">
+                  <div class="image-label">�️ 相关图片：</div>
+                  <div class="image-list">
+                    <img v-for="(img, iIndex) in msg.images" :key="iIndex" :src="img.url" class="chat-image" @click="previewImage(img.url)" />
+                  </div>
                 </div>
                 <div v-if="msg.sources && msg.sources.length > 0" class="sources">
                   <div class="source-label">📚 数据来源：</div>
                   <div v-for="(source, sIndex) in msg.sources" :key="sIndex" class="source-item">
                     <a :href="source.url" target="_blank" class="source-link">{{ source.name }}</a>
                   </div>
-                </div>
-                <div v-if="msg.llmContent" class="llm-note">
-                  <span class="llm-badge">AI补充</span>
-                  <span>{{ msg.llmContent }}</span>
                 </div>
                 <div v-if="msg.noData" class="no-data">
                   <span class="no-data-icon">⚠️</span>
@@ -58,7 +63,7 @@
 
             <div v-if="isLoading" class="loading-message">
               <div class="loading-spinner"></div>
-              <p>正在检索知识图谱...</p>
+              <p>正在思考中...</p>
             </div>
           </div>
 
@@ -101,107 +106,214 @@
       </div>
     </main>
 
+    <div v-if="previewImageUrl" class="image-preview" @click="previewImageUrl = null">
+      <img :src="previewImageUrl" class="preview-image" />
+      <span class="close-preview">✕</span>
+    </div>
+
     <footer class="footer">
       <p>&copy; 2026 文物知识问答系统 - 基于知识图谱与大语言模型构建</p>
     </footer>
   </div>
 </template>
 
-<script setup>import { ref, nextTick } from 'vue';
-import axios from 'axios';
+<script setup>
+import { ref, nextTick } from 'vue';
+
 const question = ref('');
 const messages = ref([]);
 const isLoading = ref(false);
 const messagesContainer = ref(null);
+const previewImageUrl = ref(null);
+const abortController = ref(null);
+
 const questionTypes = [
- { icon: '🏛️', name: '文物收藏地', example: '《清明上河图》现藏于哪家博物馆？' },
- { icon: '📅', name: '文物年代', example: '司母戊鼎是什么时期的文物？' },
- { icon: '🔨', name: '文物材质', example: '青花瓷是什么材质制成的？' },
- { icon: '🏺', name: '文物类型', example: '兵马俑属于什么类型的文物？' },
- { icon: '📝', name: '文物介绍', example: '请介绍一下《兰亭序》' },
- { icon: '✍️', name: '书画作者', example: '《富春山居图》的作者是谁？' },
- { icon: '👤', name: '作者生平', example: '王羲之的生平经历是怎样的？' },
- { icon: '📜', name: '同一作者作品', example: '与《清明上河图》同一作者的作品有哪些？' },
- { icon: '🏯', name: '同一朝代文物', example: '唐代有哪些代表性文物？' },
- { icon: '📏', name: '尺寸规格', example: '曾侯乙编钟的尺寸规格是多少？' },
- { icon: '🔗', name: '相关文物推荐', example: '与《千里江山图》相关的文物有哪些？' }
+  { icon: '🏛️', name: '文物收藏地', example: '《清明上河图》现藏于哪家博物馆？' },
+  { icon: '📅', name: '文物年代', example: '司母戊鼎是什么时期的文物？' },
+  { icon: '🔨', name: '文物材质', example: '青花瓷是什么材质制成的？' },
+  { icon: '🏺', name: '文物类型', example: '兵马俑属于什么类型的文物？' },
+  { icon: '📝', name: '文物介绍', example: '请介绍一下《兰亭序》' },
+  { icon: '✍️', name: '书画作者', example: '《富春山居图》的作者是谁？' },
+  { icon: '👤', name: '作者生平', example: '王羲之的生平经历是怎样的？' },
+  { icon: '📜', name: '同一作者作品', example: '与《清明上河图》同一作者的作品有哪些？' },
+  { icon: '🏯', name: '同一朝代文物', example: '唐代有哪些代表性文物？' },
+  { icon: '📏', name: '尺寸规格', example: '曾侯乙编钟的尺寸规格是多少？' },
+  { icon: '🔗', name: '相关文物推荐', example: '与《千里江山图》相关的文物有哪些？' }
 ];
+
 const suggestionTags = questionTypes.slice(0, 8).map(item => ({ name: item.name, example: item.example }));
+
 const faqs = [
- { question: '《清明上河图》现藏于哪家博物馆？' },
- { question: '青花瓷属于哪个历史时期的代表性文物？' },
- { question: '司母戊鼎是什么材质制成的？' },
- { question: '《兰亭序》的作者是谁？' },
- { question: '唐代有哪些代表性文物？' },
- { question: '与《富春山居图》风格相似的文物有哪些？' }
+  { question: '《清明上河图》现藏于哪家博物馆？' },
+  { question: '青花瓷属于哪个历史时期的代表性文物？' },
+  { question: '司母戊鼎是什么材质制成的？' },
+  { question: '《兰亭序》的作者是谁？' },
+  { question: '唐代有哪些代表性文物？' },
+  { question: '与《富春山居图》风格相似的文物有哪些？' }
 ];
+
+const parseSSE = (line) => {
+  if (line.startsWith('event: ')) {
+    return { type: 'event', value: line.slice(7) };
+  }
+  if (line.startsWith('data: ')) {
+    return { type: 'data', value: line.slice(6) };
+  }
+  return null;
+};
+
+const formatMarkdown = (text) => {
+  if (!text) return '';
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br />');
+};
+
 const submitQuestion = async () => {
- if (!question.value.trim() || isLoading.value)
- return;
- const userQuestion = question.value.trim();
- messages.value.push({ type: 'user', content: userQuestion });
- question.value = '';
- isLoading.value = true;
- await nextTick(() => {
- scrollToBottom();
- });
- try {
- const response = await axios.post('/api/qa/ask', null, {
- params: { question: userQuestion }
- });
- const result = response.data;
- const answer = result.data;
- if (answer && answer.content) {
- messages.value.push({
- type: 'bot',
- content: answer.content,
- sources: answer.sources || [],
- llmContent: answer.llmContent
- });
- }
- else {
- messages.value.push({
- type: 'bot',
- content: '',
- noData: true
- });
- }
- }
- catch (error) {
- messages.value.push({
- type: 'bot',
- content: '',
- noData: true
- });
- }
- isLoading.value = false;
- await nextTick(() => {
- scrollToBottom();
- });
+  if (!question.value.trim() || isLoading.value) return;
+
+  const userQuestion = question.value.trim();
+  messages.value.push({ type: 'user', content: userQuestion });
+  question.value = '';
+  isLoading.value = true;
+
+  const botMessage = {
+    type: 'bot',
+    llmContent: '',
+    sources: [],
+    images: [],
+    noData: false
+  };
+  messages.value.push(botMessage);
+  const messageIndex = messages.value.length - 1;
+
+  await nextTick(() => {
+    scrollToBottom();
+  });
+
+  abortController.value = new AbortController();
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({ question: userQuestion }),
+      signal: abortController.value.signal
+    });
+
+    if (!response.ok) {
+      throw new Error('请求失败');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let currentEvent = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const parsed = parseSSE(trimmed);
+        if (!parsed) continue;
+
+        if (parsed.type === 'event') {
+          currentEvent = parsed.value;
+        } else if (parsed.type === 'data' && currentEvent) {
+          switch (currentEvent) {
+            case 'llm':
+              messages.value[messageIndex].llmContent += parsed.value;
+              await nextTick(() => scrollToBottom());
+              break;
+            case 'source':
+              try {
+                const source = JSON.parse(parsed.value);
+                messages.value[messageIndex].sources.push(source);
+              } catch (e) {
+                console.error('解析 source 失败:', e);
+              }
+              break;
+            case 'img':
+              try {
+                const img = JSON.parse(parsed.value);
+                messages.value[messageIndex].images.push(img);
+              } catch (e) {
+                console.error('解析 img 失败:', e);
+              }
+              break;
+            case 'done':
+              if (!messages.value[messageIndex].llmContent && 
+                  messages.value[messageIndex].sources.length === 0 && 
+                  messages.value[messageIndex].images.length === 0) {
+                messages.value[messageIndex].noData = true;
+              }
+              break;
+            case 'error':
+              console.error('服务端错误:', parsed.value);
+              messages.value[messageIndex].noData = true;
+              break;
+          }
+          currentEvent = null;
+        }
+      }
+    }
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      console.error('请求异常:', error);
+      messages.value[messageIndex].noData = true;
+    }
+  } finally {
+    isLoading.value = false;
+    abortController.value = null;
+    await nextTick(() => scrollToBottom());
+  }
 };
+
 const handleQuickQuestion = (q) => {
- question.value = q;
- submitQuestion();
+  question.value = q;
+  submitQuestion();
 };
+
 const handleTypeClick = (type) => {
- messages.value.push({
- type: 'bot',
- content: `您可以这样问："${type.example}"`,
- hasLink: true,
- linkText: '去试试',
- linkExample: type.example
- });
- nextTick(() => {
- scrollToBottom();
- });
+  messages.value.push({
+    type: 'bot',
+    content: `您可以这样问："${type.example}"`,
+    hasLink: true,
+    linkText: '去试试',
+    linkExample: type.example,
+    llmContent: '',
+    sources: [],
+    images: []
+  });
+  nextTick(() => {
+    scrollToBottom();
+  });
 };
+
 const handleTryLink = (example) => {
- question.value = example;
+  question.value = example;
 };
+
 const scrollToBottom = () => {
- if (messagesContainer.value) {
- messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
- }
+  if (messagesContainer.value) {
+    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+  }
+};
+
+const previewImage = (url) => {
+  previewImageUrl.value = url;
 };
 </script>
 
@@ -377,6 +489,80 @@ const scrollToBottom = () => {
   transform: translateY(-2px);
 }
 
+.llm-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.llm-content strong {
+  font-weight: 600;
+}
+
+.llm-content em {
+  font-style: italic;
+}
+
+.images {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.image-label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.chat-image {
+  max-width: 150px;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: transform 0.3s ease;
+}
+
+.chat-image:hover {
+  transform: scale(1.05);
+}
+
+.image-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  cursor: pointer;
+}
+
+.preview-image {
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+  border-radius: 0.5rem;
+}
+
+.close-preview {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  font-size: 2rem;
+  color: white;
+  cursor: pointer;
+}
+
 .sources {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -403,27 +589,6 @@ const scrollToBottom = () => {
 .source-link:hover {
   color: #764ba2;
   text-decoration: underline;
-}
-
-.llm-note {
-  margin-top: 1rem;
-  padding: 0.75rem;
-  background: #fff3cd;
-  border-radius: 0.5rem;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-
-.llm-badge {
-  background: #ffc107;
-  color: #333;
-  padding: 0.2rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  flex-shrink: 0;
 }
 
 .no-data {
@@ -540,9 +705,11 @@ const scrollToBottom = () => {
   flex-direction: column;
   gap: 1.5rem;
   overflow-y: auto;
-  /* 禁止滑动 */
   scrollbar-width: none;
+}
 
+.sidebar::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-section {
