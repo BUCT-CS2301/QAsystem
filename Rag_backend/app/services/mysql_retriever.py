@@ -11,7 +11,8 @@ class MySQLRetriever:
             SELECT a.object_id, a.title, a.period, a.type, a.material,
                    a.description, a.dimensions, a.image_url,
                    a.credit_line, a.accession_number,
-                   m.name AS museum_name, m.name_cn AS museum_name_cn
+                   m.name AS museum_name, m.name_cn AS museum_name_cn,
+                   m.website AS museum_website
             FROM artifact a
             LEFT JOIN museum m ON a.museum_id = m.object_id
             WHERE a.object_id = %s AND a.is_deleted = 0
@@ -34,5 +35,6 @@ class MySQLRetriever:
             description=row.get("description") or "",
             dimensions=row.get("dimensions") or "",
             image_url=row.get("image_url") or "",
+            museum_url=row.get("museum_website") or "",
             accession_number=row.get("accession_number") or "",
         )

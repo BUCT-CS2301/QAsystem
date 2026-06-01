@@ -253,3 +253,105 @@ llm*
 * done 表示结束事件
 
 客户端应根据 event 类型进行处理，而不应依赖具体事件数量。
+
+---
+
+# 普通问答接口（REST）
+
+## 接口说明
+
+用于获取 AI 问答结果，采用传统 HTTP 请求-响应方式，一次性返回完整结果（非流式）。
+
+适用场景：其他子系统对接、不需要流式展示的场景。
+
+---
+
+## 请求信息
+
+### 请求地址
+
+```http
+POST /qa/ask
+```
+
+### 请求参数
+
+| 名称       | 位置    | 类型     | 必填 | 说明     |
+| -------- | ----- | ------ | -- | ------ |
+| question | query | string | 是  | 用户提问内容 |
+
+---
+
+## 响应格式
+
+### Content-Type
+
+```http
+Content-Type: application/json
+```
+
+### 返回示例
+
+> 200 Response
+
+```json
+{
+    "code": 200,
+    "data": {
+        "content": "《清明上河图》现藏于北京故宫博物院。",
+        "sources": [
+            {
+                "name": "故宫博物院官网",
+                "url": "https://www.dpm.org.cn/"
+            },
+            {
+                "name": "中国国家博物馆",
+                "url": "https://www.chnmuseum.cn/"
+            }
+        ],
+        "llmContent": "《清明上河图》是北宋画家张择端的代表作，描绘了北宋都城汴京的繁华景象。"
+    }
+}
+```
+
+### 返回结果
+
+| 状态码 | 状态码含义 | 说明   | 数据模型   |
+| --- | ----- | ---- | ------ |
+| 200 | OK    | none | Inline |
+
+### 返回数据结构
+
+状态码 **200**
+
+| 名称             | 类型             | 必选   | 说明     |
+| -------------- | -------------- | ---- | ------ |
+| **code**       | integer        | true | 状态码    |
+| **data**       | object         | true | 数据对象   |
+| **content**    | string         | true | 回答文本   |
+| **sources**    | list\<object\> | true | 来源列表   |
+| **name**       | string         | true | 来源名称   |
+| **url**        | string         | true | 来源URL  |
+| **llmContent** | string         | true | 大模型延伸内容 |
+
+---
+
+## 调用示例
+
+### cURL
+
+```bash
+curl -X POST "http://127.0.0.1:8000/qa/ask?question=清明上河图收藏在哪里"
+```
+
+### Python
+
+```python
+import requests
+
+response = requests.post(
+    "http://127.0.0.1:8000/qa/ask",
+    params={"question": "清明上河图收藏在哪里？"}
+)
+print(response.json())
+```

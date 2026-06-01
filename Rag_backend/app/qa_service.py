@@ -8,7 +8,6 @@ from app.config import settings
 from app.db import Database
 from app.models import Artifact, QAResult, Source
 from app.services.answer_generator import AnswerGenerator, QAResultMeta
-from app.services.cache_service import CacheService
 from app.services.llm_client import LLMClient
 from app.services.graph_retriever import GraphRetriever
 from app.services.mysql_retriever import MySQLRetriever
@@ -22,15 +21,8 @@ class QAService:
         self.mysql = MySQLRetriever(self.db)
         self.llm = LLMClient()
         self.answer_generator = AnswerGenerator()
-        self.cache = CacheService()
 
     def ask(self, question: str) -> QAResult:
-        cache_key = self.cache.make_question_key(question)
-        cached = self.cache.get_json(cache_key)
-        if cached:
-            result = self._result_from_dict(cached)
-            result.debug["cache_hit"] = True
-            return result
 
         try:
             query_vector = self.llm.embed(question)
@@ -67,19 +59,9 @@ class QAService:
                 debug={"error": str(exc)},
             )
 
-        if result.confidence > 0:
-            self.cache.set_json(cache_key, asdict(result))
-            self.cache.remember_question(question, result.content)
         return result
 
     def ask_stream(self, question: str) -> tuple[Generator[str, None, None], QAResultMeta]:
-        cache_key = self.cache.make_question_key(question)
-        cached = self.cache.get_json(cache_key)
-        if cached:
-            result = self._result_from_dict(cached)
-            result.debug["cache_hit"] = True
-            meta = QAResultMeta.from_result(result)
-            return iter([result.content]), meta
 
         try:
             query_vector = self.llm.embed(question)
@@ -93,10 +75,6 @@ class QAService:
                     full_answer.append(token)
                     yield token
                 answer_str = "".join(full_answer)
-                if meta.confidence > 0:
-                    final_result = meta.to_result(answer_str)
-                    self.cache.set_json(cache_key, asdict(final_result))
-                    self.cache.remember_question(question, answer_str)
 
             return wrap_generator(token_gen), meta
 
@@ -133,6 +111,7 @@ class QAService:
             museum=mysql_artifact.museum,
             dimensions=mysql_artifact.dimensions or artifact.dimensions,
             image_url=mysql_artifact.image_url,
+            museum_url=mysql_artifact.museum_url,
             accession_number=mysql_artifact.accession_number or artifact.accession_number,
             score=artifact.score,
         )
