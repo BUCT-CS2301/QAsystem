@@ -152,15 +152,7 @@ const faqs = [
   { question: '与《富春山居图》风格相似的文物有哪些？' }
 ];
 
-const parseSSE = (line) => {
-  if (line.startsWith('event: ')) {
-    return { type: 'event', value: line.slice(7) };
-  }
-  if (line.startsWith('data: ')) {
-    return { type: 'data', value: line.slice(6) };
-  }
-  return null;
-};
+
 
 const formatMarkdown = (text) => {
   if (!text) return '';
@@ -214,6 +206,8 @@ const submitQuestion = async () => {
     let buffer = '';
     let currentEvent = null;
 
+    let eventData = [];
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -223,49 +217,57 @@ const submitQuestion = async () => {
       buffer = lines.pop();
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        const parsed = parseSSE(trimmed);
-        if (!parsed) continue;
-
-        if (parsed.type === 'event') {
-          currentEvent = parsed.value;
-        } else if (parsed.type === 'data' && currentEvent) {
-          switch (currentEvent) {
-            case 'llm':
-              messages.value[messageIndex].llmContent += parsed.value;
-              await nextTick(() => scrollToBottom());
-              break;
-            case 'source':
-              try {
-                const source = JSON.parse(parsed.value);
-                messages.value[messageIndex].sources.push(source);
-              } catch (e) {
-                console.error('解析 source 失败:', e);
-              }
-              break;
-            case 'img':
-              try {
-                const img = JSON.parse(parsed.value);
-                messages.value[messageIndex].images.push(img);
-              } catch (e) {
-                console.error('解析 img 失败:', e);
-              }
-              break;
-            case 'done':
-              if (!messages.value[messageIndex].llmContent && 
-                  messages.value[messageIndex].sources.length === 0 && 
-                  messages.value[messageIndex].images.length === 0) {
+        if (line === '') {
+          if (currentEvent && eventData.length > 0) {
+            const dataStr = eventData.join('\n');
+            switch (currentEvent) {
+              case 'llm':
+                messages.value[messageIndex].llmContent += dataStr;
+                nextTick(() => scrollToBottom());
+                break;
+              case 'source':
+                try {
+                  const source = JSON.parse(dataStr);
+                  // 顺便前端也做个去重，防止相同链接被渲染多次
+                  if (!messages.value[messageIndex].sources.some(s => s.url === source.url)) {
+                    messages.value[messageIndex].sources.push(source);
+                  }
+                } catch (e) {
+                  console.error('解析 source 失败:', e);
+                }
+                break;
+              case 'img':
+                try {
+                  const img = JSON.parse(dataStr);
+                  messages.value[messageIndex].images.push(img);
+                } catch (e) {
+                  console.error('解析 img 失败:', e);
+                }
+                break;
+              case 'done':
+                if (!messages.value[messageIndex].llmContent && 
+                    messages.value[messageIndex].sources.length === 0 && 
+                    messages.value[messageIndex].images.length === 0) {
+                  messages.value[messageIndex].noData = true;
+                }
+                break;
+              case 'error':
+                console.error('服务端错误:', dataStr);
                 messages.value[messageIndex].noData = true;
-              }
-              break;
-            case 'error':
-              console.error('服务端错误:', parsed.value);
-              messages.value[messageIndex].noData = true;
-              break;
+                break;
+            }
           }
           currentEvent = null;
+          eventData = [];
+          continue;
+        }
+
+        if (line.startsWith('event:')) {
+          currentEvent = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          let val = line.slice(5);
+          if (val.startsWith(' ')) val = val.slice(1);
+          eventData.push(val);
         }
       }
     }

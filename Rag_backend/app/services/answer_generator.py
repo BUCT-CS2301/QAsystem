@@ -281,14 +281,15 @@ class AnswerGenerator:
         return Source(name=museum_name, url=url)
 
     def _deduplicated_sources(self, artifacts: list[Artifact]) -> list[Source]:
-        """Generate sources list with deduplication by object_id."""
-        seen: set[str] = set()
+        """Generate sources list with deduplication by url."""
+        seen_urls: set[str] = set()
         sources: list[Source] = []
         for item in artifacts:
-            if item.object_id in seen:
+            source = self._source_from_artifact(item, f"相似度 {item.score:.3f}")
+            if source.url in seen_urls:
                 continue
-            seen.add(item.object_id)
-            sources.append(self._source_from_artifact(item, f"相似度 {item.score:.3f}"))
+            seen_urls.add(source.url)
+            sources.append(source)
         return sources
 
     def _deduplicated_artifacts(self, artifacts: list[Artifact]) -> list[Artifact]:
