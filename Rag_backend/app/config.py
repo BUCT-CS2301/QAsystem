@@ -33,16 +33,6 @@ class Neo4jConfig:
 
 
 @dataclass(frozen=True)
-class RedisConfig:
-    host: str = os.getenv("REDIS_HOST", "127.0.0.1")
-    port: int = _int_env("REDIS_PORT", 6379)
-    db: int = _int_env("REDIS_DB", 0)
-    enabled: bool = os.getenv("REDIS_ENABLED", "1") != "0"
-    ttl_seconds: int = _int_env("QA_CACHE_TTL", 3600)
-    history_limit: int = _int_env("QA_HISTORY_LIMIT", 200)
-
-
-@dataclass(frozen=True)
 class LLMConfig:
     api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.siliconflow.cn/v1")
@@ -72,7 +62,6 @@ class RAGConfig:
 class Settings:
     mysql: MySQLConfig = MySQLConfig()
     neo4j: Neo4jConfig = Neo4jConfig()
-    redis: RedisConfig = RedisConfig()
     llm: LLMConfig = LLMConfig()
     rag: RAGConfig = RAGConfig()
     result_limit: int = _int_env("QA_RESULT_LIMIT", 12)

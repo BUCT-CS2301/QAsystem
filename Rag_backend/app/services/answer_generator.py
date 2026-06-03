@@ -272,21 +272,24 @@ class AnswerGenerator:
         return mapping.get(attribute, "")
 
     def _source_from_artifact(self, artifact: Artifact, detail: str) -> Source:
-        # 优先使用博物馆官网作为来源，如果没有则使用外部链接或占位符
-        return Source(
-            name=artifact.museum or "博物馆知识图谱",
-            url=artifact.image_url or "https://www.dpm.org.cn/",  # 默认指向故宫
-        )
+        # 优先使用博物馆官网作为来源
+        museum_name = artifact.museum or "博物馆知识图谱"
+        url = artifact.museum_url or ""
+        if not url:
+            # 没有官网时，使用博物馆名搜索链接作为兜底
+            url = f"https://www.google.com/search?q={museum_name}" if artifact.museum else "unknown"
+        return Source(name=museum_name, url=url)
 
     def _deduplicated_sources(self, artifacts: list[Artifact]) -> list[Source]:
-        """Generate sources list with deduplication by object_id."""
-        seen: set[str] = set()
+        """Generate sources list with deduplication by url."""
+        seen_urls: set[str] = set()
         sources: list[Source] = []
         for item in artifacts:
-            if item.object_id in seen:
+            source = self._source_from_artifact(item, f"相似度 {item.score:.3f}")
+            if source.url in seen_urls:
                 continue
-            seen.add(item.object_id)
-            sources.append(self._source_from_artifact(item, f"相似度 {item.score:.3f}"))
+            seen_urls.add(source.url)
+            sources.append(source)
         return sources
 
     def _deduplicated_artifacts(self, artifacts: list[Artifact]) -> list[Artifact]:
