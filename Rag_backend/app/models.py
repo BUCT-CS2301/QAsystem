@@ -13,6 +13,7 @@ class Artifact:
     museum: str = ""
     dimensions: str = ""
     image_url: str = ""
+    museum_url: str = ""
     accession_number: str = ""
     score: float = 0.0
 
