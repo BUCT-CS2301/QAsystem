@@ -43,7 +43,7 @@
                   <span v-html="formatMarkdown(msg.llmContent)"></span>
                 </div>
                 <div v-if="msg.images && msg.images.length > 0" class="images">
-                  <div class="image-label">�️ 相关图片：</div>
+                  <div class="image-label">🖼️ 相关图片：</div>
                   <div class="image-list">
                     <img v-for="(img, iIndex) in msg.images" :key="iIndex" :src="img.url" class="chat-image" @click="previewImage(img.url)" />
                   </div>

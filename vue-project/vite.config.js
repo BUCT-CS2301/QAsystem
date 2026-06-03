@@ -6,7 +6,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 const proxyConfig = {
   '/api': {
-    target: 'http://127.0.0.1:8000',
+    target: 'http://60.205.14.101:8000',
     changeOrigin: true
   }
 }
