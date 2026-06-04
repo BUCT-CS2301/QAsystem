@@ -43,7 +43,7 @@
                   <span v-html="formatMarkdown(msg.llmContent)"></span>
                 </div>
                 <div v-if="msg.images && msg.images.length > 0" class="images">
-                  <div class="image-label">�️ 相关图片：</div>
+                  <div class="image-label">🖼️ 相关图片：</div>
                   <div class="image-list">
                     <img v-for="(img, iIndex) in msg.images" :key="iIndex" :src="img.url" class="chat-image" @click="previewImage(img.url)" />
                   </div>
@@ -126,6 +126,8 @@ const isLoading = ref(false);
 const messagesContainer = ref(null);
 const previewImageUrl = ref(null);
 const abortController = ref(null);
+const lastSubmitTime = ref(0);
+const THROTTLE_TIME = 1000; // 1秒节流时间
 
 const questionTypes = [
   { icon: '🏛️', name: '文物收藏地', example: '《清明上河图》现藏于哪家博物馆？' },
@@ -163,7 +165,9 @@ const formatMarkdown = (text) => {
 };
 
 const submitQuestion = async () => {
-  if (!question.value.trim() || isLoading.value) return;
+  const now = Date.now();
+  if (!question.value.trim() || isLoading.value || (now - lastSubmitTime.value < THROTTLE_TIME)) return;
+  lastSubmitTime.value = now;
 
   const userQuestion = question.value.trim();
   messages.value.push({ type: 'user', content: userQuestion });
